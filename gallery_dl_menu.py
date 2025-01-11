@@ -6,9 +6,17 @@ from tqdm import tqdm
 def run_gallery_dl_with_progress(url, auth_args=None):
     """
     Runs gallery-dl with progress bar updates by parsing its stdout.
-    Optionally includes authentication arguments.
+    Optionally includes authentication arguments. Captures and displays debug and error messages from stderr.
     """
-    command = ["gallery-dl", "--download-archive", "downloaded.txt"]
+
+    # Specify the download directory
+    download_dir = "./downloads"
+
+    # Ensure the directory exists
+    os.makedirs(download_dir, exist_ok=True)
+
+    # Build the command
+    command = ["gallery-dl", "--download-archive", "downloaded.txt", "--verbose", "-d", download_dir]
 
     if auth_args:
         command.extend(auth_args)
@@ -25,15 +33,27 @@ def run_gallery_dl_with_progress(url, auth_args=None):
     with tqdm(
         desc=f"Downloading: {url}", unit="B", unit_scale=True, unit_divisor=1024
     ) as pbar:
-        for line in process.stdout:
-            if "%" in line:  # Try to parse progress info
-                try:
-                    percentage = float(line.split("%")[0].strip())
-                    pbar.n = int(percentage * pbar.total / 100) if pbar.total else 0
-                    pbar.refresh()
-                except ValueError:
-                    pass  # Skip lines that don't conform to expected format
-            print(line.strip())
+        while True:
+            # Read stdout and stderr lines simultaneously
+            stdout_line = process.stdout.readline()
+            stderr_line = process.stderr.readline()
+
+            if stdout_line:
+                print(stdout_line.strip())  # Print standard output
+                if "%" in stdout_line:  # Try to parse progress info
+                    try:
+                        percentage = float(stdout_line.split("%")[0].strip())
+                        pbar.n = int(percentage * pbar.total / 100) if pbar.total else 0
+                        pbar.refresh()
+                    except ValueError:
+                        pass  # Skip lines that don't conform to expected format
+
+            if stderr_line:
+                print(f"[DEBUG/ERROR]: {stderr_line.strip()}")  # Log errors or debug info
+
+            # Break loop if process is done and all streams are empty
+            if process.poll() is not None and not stdout_line and not stderr_line:
+                break
 
         process.wait()
 
