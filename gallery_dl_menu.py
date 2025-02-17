@@ -6,9 +6,8 @@ from tqdm import tqdm
 def run_gallery_dl_with_progress(url, auth_args=None):
     """
     Runs gallery-dl with progress bar updates by parsing its stdout.
-    Optionally includes authentication arguments. Captures and displays debug and error messages from stderr.
+    Optionally includes authentication arguments.
     """
-
     # Specify the download directory
     download_dir = "./downloads"
 
@@ -16,46 +15,60 @@ def run_gallery_dl_with_progress(url, auth_args=None):
     os.makedirs(download_dir, exist_ok=True)
 
     # Build the command
-    command = ["gallery-dl", "--download-archive", "downloaded.txt", "--verbose", "-d", download_dir]
+    command = [
+        "gallery-dl",
+        "--verbose",
+        "--download-archive",
+        "downloaded.txt",
+        "-d",
+        download_dir,
+    ]
 
     if auth_args:
         command.extend(auth_args)
 
     command.append(url)
 
-    process = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
 
-    with tqdm(
-        desc=f"Downloading: {url}", unit="B", unit_scale=True, unit_divisor=1024
-    ) as pbar:
-        while True:
-            # Read stdout and stderr lines simultaneously
-            stdout_line = process.stdout.readline()
-            stderr_line = process.stderr.readline()
+        with tqdm(
+            desc=f"Downloading: {url}", unit="B", unit_scale=True, unit_divisor=1024
+        ) as pbar:
+            for line in iter(process.stdout.readline, ""):
+                line = line.strip()
+                print(line)  # Print gallery-dl output for debugging
 
-            if stdout_line:
-                print(stdout_line.strip())  # Print standard output
-                if "%" in stdout_line:  # Try to parse progress info
+                # Try to parse progress
+                if "%" in line:
                     try:
-                        percentage = float(stdout_line.split("%")[0].strip())
+                        percentage = float(line.split("%")[0].strip())
                         pbar.n = int(percentage * pbar.total / 100) if pbar.total else 0
                         pbar.refresh()
                     except ValueError:
                         pass  # Skip lines that don't conform to expected format
 
-            if stderr_line:
-                print(f"[DEBUG/ERROR]: {stderr_line.strip()}")  # Log errors or debug info
+            # Process stderr for debugging
+            for err_line in process.stderr:
+                print(f"ERROR: {err_line.strip()}")
 
-            # Break loop if process is done and all streams are empty
-            if process.poll() is not None and not stdout_line and not stderr_line:
-                break
-
-        process.wait()
+            process.wait()
+            if process.returncode != 0:
+                raise subprocess.CalledProcessError(
+                    process.returncode, command, output="Error during download."
+                )
+    except FileNotFoundError:
+        print("Error: gallery-dl is not installed or not in PATH.")
+    except Exception as e:
+        print(f"Unexpected error occurred: {e}")
+    finally:
+        pbar.close()
 
 
 def get_auth_args():
@@ -118,17 +131,34 @@ def bulk_download():
         print("URLS.txt file not found. Please run Setup to create it.")
 
 
-def setup_urls_file():
-    urls_file = "./URLS.txt"
-    print("Creating or editing the URLS.txt file.")
-    print("Enter URLs line by line. Press Enter on an empty line to finish.")
-    with open(urls_file, "w") as file:
-        while True:
-            url = input("Enter a URL (or leave blank to finish): ")
-            if not url.strip():
-                break
-            file.write(url.strip() + "\n")
-    print(f"URLs saved to {urls_file}.")
+def update():
+    command = ["gallery-dl", "-U", "--update-check"]
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+
+        for line in process.stdout:
+            print(line.strip())
+
+        for err_line in process.stderr:
+            print(f"ERROR: {err_line.strip()}")
+
+        process.wait()
+        if process.returncode != 0:
+            raise subprocess.CalledProcessError(
+                process.returncode, command, output="Error during update."
+            )
+    except FileNotFoundError:
+        print("Error: gallery-dl is not installed or not in PATH.")
+    except Exception as e:
+        print(f"Unexpected error occurred: {e}")
+    finally:
+        print("Update complete.")
 
 
 def show_help():
@@ -150,7 +180,7 @@ def main():
         print("\nGallery-dl Menu:")
         print("1. Download Single")
         print("2. Bulk Download")
-        print("3. Setup")
+        print("3. Update")
         print("4. Help")
         print("5. Exit")
 
@@ -160,7 +190,7 @@ def main():
         elif choice == "2":
             bulk_download()
         elif choice == "3":
-            setup_urls_file()
+            update()
         elif choice == "4":
             show_help()
         elif choice == "5":
