@@ -3,3 +3,5 @@ downloaded.txt
 URLS.txt
 gallery-dl/
 downloads/
+cookies/*
+!cookies/.put_cookies_here
